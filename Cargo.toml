@@ -1,0 +1,17 @@
+[package]
+name = "live_class_downloader"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+reqwest = { version = "0.12.4", features = ["blocking", "json"] }
+serde = { version = "1.0", features = ["derive"] }
+csv = "1.1"
+structopt = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+percent-encoding = "2.3.1"
+serde_json = "1.0.117"
+tokio = { version = "1.38.0", features = ["full"] }
+futures = "0.3.30"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+ffmpeg-cli = "0.1.0"
