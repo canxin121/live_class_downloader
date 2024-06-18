@@ -9,6 +9,7 @@ use std::error::Error;
 use std::fs::{self};
 use std::io::{self};
 use std::io::{BufRead, BufReader};
+use std::process::Child;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -151,18 +152,31 @@ async fn get_m3u8_links(
 
     Err("Failed to get m3u8 links after 3 attempts".into())
 }
-
-fn download_m3u8(
+#[cfg(feature = "ffmpeg")]
+fn exec_command(url: &str, filename: &str, save_dir: &str, _: &str) -> std::io::Result<Child> {
+    use std::path::PathBuf;
+    let mut path = PathBuf::new();
+    path.push(save_dir);
+    path.push(filename);
+    Command::new("ffmpeg")
+        .arg("-i")
+        .arg(url)
+        .arg("-f")
+        .arg("mp4")
+        .arg("-c")
+        .arg("copy")
+        .arg("")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}
+#[cfg(not(feature = "ffmpeg"))]
+fn exec_command(
     url: &str,
     filename: &str,
     save_dir: &str,
     command: &str,
-) -> Result<(), Box<dyn Error>> {
-    info!(
-        "Downloading m3u8: url={} filename={} save_dir={}",
-        url, filename, save_dir
-    );
-
+) -> std::io::Result<Child> {
     let default_command = if cfg!(target_os = "windows") {
         format!(
             r#"./N_m3u8DL-RE.exe "{}" --save-dir "{}" --save-name "{}" --check-segments-count False --binary-merge True"#,
@@ -193,6 +207,8 @@ fn download_m3u8(
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
+    } else if cfg!(feature = "ffmpeg") {
+        Command::new("ffmpeg").arg("-i").spawn()
     } else {
         Command::new("sh")
             .arg("-c")
@@ -201,6 +217,20 @@ fn download_m3u8(
             .stderr(Stdio::piped())
             .spawn()
     };
+    result
+}
+
+fn download_m3u8(
+    url: &str,
+    filename: &str,
+    save_dir: &str,
+    command: &str,
+) -> Result<(), Box<dyn Error>> {
+    info!(
+        "Downloading m3u8: url={} filename={} save_dir={}",
+        url, filename, save_dir
+    );
+    let result = exec_command(url, filename, save_dir, command);
 
     match result {
         Ok(mut child) => {
@@ -210,7 +240,10 @@ fn download_m3u8(
 
             let tx_clone = tx.clone();
             thread::spawn(move || {
+                #[cfg(not(feature = "ffmpeg"))]
                 let reader = BufReader::new(stdout);
+                #[cfg(feature = "ffmpeg")]
+                let reader = BufReader::new(stderr);
                 for line in reader.lines() {
                     match line {
                         Ok(l) => {
@@ -226,7 +259,10 @@ fn download_m3u8(
             });
 
             thread::spawn(move || {
+                #[cfg(not(feature = "ffmpeg"))]
                 let reader = BufReader::new(stderr);
+                #[cfg(feature = "ffmpeg")]
+                let reader = BufReader::new(stdout);
                 for line in reader.lines() {
                     match line {
                         Ok(l) => {
